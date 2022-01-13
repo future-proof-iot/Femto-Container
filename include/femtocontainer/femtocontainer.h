@@ -12,12 +12,11 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include "btree.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define BPF_STACK_SIZE  512
+#define FC_STACK_SIZE  512
 
 #define RBPF_MAGIC_NO 0x72425046 /**< Magic header number: "rBPF" */
 
@@ -29,140 +28,134 @@ typedef struct __attribute__((packed)) {
     uint32_t rodata_len; /**< Length of the rodata section */
     uint32_t text_len;   /**< Length of the text section */
     uint32_t functions;  /**< Number of functions available */
-} rbpf_header_t;
+} femto_container_header_t;
 
 typedef struct __attribute__((packed)) {
     uint16_t name_offset; /**< Offset in the rodata for the name */
     uint16_t flags;       /**< Flags for this function */
     uint16_t location_offset; /**< Location in the text section where the function starts */
-} rbpf_function_t;
+} femto_container_function_t;
 
 typedef enum {
-    BPF_POLICY_CONTINUE,            /**< Always execute next hook */
-    BPF_POLICY_ABORT_ON_NEGATIVE,   /**< Execute next script unless result is negative */
-    BPF_POLICY_ABORT_ON_POSITIVE,   /**< Execute next script unless result is non-zero positive */
-    BPF_POLICY_SINGLE,              /**< Always stop after this execution */
-} bpf_hook_policy_t;
-
-typedef enum {
-    BPF_HOOK_TRIGGER_NETIF,
-    BPF_HOOK_SCHED,
-    BPF_HOOK_NUM,
-} bpf_hook_trigger_t;
+    FC_POLICY_CONTINUE,            /**< Always execute next hook */
+    FC_POLICY_ABORT_ON_NEGATIVE,   /**< Execute next script unless result is negative */
+    FC_POLICY_ABORT_ON_POSITIVE,   /**< Execute next script unless result is non-zero positive */
+    FC_POLICY_SINGLE,              /**< Always stop after this execution */
+} femto_container_hook_policy_t;
 
 enum {
-    BPF_OK = 0,
-    BPF_ILLEGAL_INSTRUCTION = -1,
-    BPF_ILLEGAL_MEM         = -2,
-    BPF_ILLEGAL_JUMP        = -3,
-    BPF_ILLEGAL_CALL        = -4,
-    BPF_ILLEGAL_LEN         = -5,
-    BPF_ILLEGAL_REGISTER    = -6,
-    BPF_NO_RETURN           = -7,
-    BPF_OUT_OF_BRANCHES     = -8,
-    BPF_ILLEGAL_DIV         = -9,
+    FC_OK = 0,
+    FC_ILLEGAL_INSTRUCTION = -1,
+    FC_ILLEGAL_MEM         = -2,
+    FC_ILLEGAL_JUMP        = -3,
+    FC_ILLEGAL_CALL        = -4,
+    FC_ILLEGAL_LEN         = -5,
+    FC_ILLEGAL_REGISTER    = -6,
+    FC_NO_RETURN           = -7,
+    FC_OUT_OF_BRANCHES     = -8,
+    FC_ILLEGAL_DIV         = -9,
 };
 
-typedef struct bpf_mem_region bpf_mem_region_t;
+typedef struct fc_mem_region fc_mem_region_t;
 
-#define BPF_MEM_REGION_READ     0x01
-#define BPF_MEM_REGION_WRITE    0x02
-#define BPF_MEM_REGION_EXEC     0x04
+#define FC_MEM_REGION_READ     0x01
+#define FC_MEM_REGION_WRITE    0x02
+#define FC_MEM_REGION_EXEC     0x04
 
-
-struct bpf_mem_region {
-    bpf_mem_region_t *next;
+/**
+ * @brief Femto-Container memory region
+ */
+struct fc_mem_region {
+    fc_mem_region_t *next;
     const uint8_t *start;
     size_t len;
     uint8_t flag;
 };
 
-#define BPF_FLAG_SETUP_DONE        0x01
-#define BPF_FLAG_PREFLIGHT_DONE    0x02
-#define BPF_CONFIG_NO_RETURN       0x0100 /**< Script doesn't need to have a return */
+#define FC_FLAG_SETUP_DONE        0x01
+#define FC_FLAG_PREFLIGHT_DONE    0x02
+#define FC_CONFIG_NO_RETURN       0x0100 /**< Script doesn't need to have a return */
 
 typedef struct {
-    bpf_mem_region_t stack_region;
-    bpf_mem_region_t rodata_region;
-    bpf_mem_region_t data_region;
-    bpf_mem_region_t arg_region;
+    fc_mem_region_t stack_region;
+    fc_mem_region_t rodata_region;
+    fc_mem_region_t data_region;
+    fc_mem_region_t arg_region;
     const uint8_t *application; /**< Application bytecode */
     size_t application_len;     /**< Application length */
     uint8_t *stack;             /**< VM stack, must be a multiple of 8 bytes and aligned */
     size_t stack_size;          /**< VM stack size in bytes */
-    btree_t btree;              /**< Local btree */
     uint16_t flags;
     uint32_t branches_remaining; /**< Number of allowed branch instructions remaining */
-} bpf_t;
+} femto_container_t;
 
-typedef struct bpf_hook bpf_hook_t;
+typedef struct femto_container_hook femto_container_hook_t;
 
 struct bpf_hook {
-    struct bpf_hook *next;
-    bpf_t *application;
+    struct femto_container_hook *next;
+    femto_container_t *application;
     uint32_t executions;
-    bpf_hook_policy_t policy;
+    femto_container_hook_policy_t policy;
 };
 
-typedef uint32_t (*bpf_call_t)(bpf_t *bpf, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5);
+typedef uint32_t (*fc_call_t)(femto_container_t *fc, uint64_t *regs);
 
-void bpf_init(void);
-void bpf_setup(bpf_t *bpf);
+void fc_init(void);
+void fc_setup(femto_container_t *bpf);
 
-int bpf_verify_preflight(bpf_t *bpf);
+int femto_container_verify_preflight(femto_container_t *bpf);
 
-int bpf_execute(bpf_t *bpf, void *ctx, size_t ctx_size, int64_t *result);
-int bpf_execute_ctx(bpf_t *bpf, void *ctx, size_t ctx_size, int64_t *result);
-int bpf_hook_execute(bpf_hook_trigger_t trigger, void *ctx, size_t ctx_size, int64_t *script_res);
-int bpf_hook_install(bpf_hook_t *hook, bpf_hook_trigger_t trigger);
+int fc_execute(femto_container_t *bpf, void *ctx, size_t ctx_size, int64_t *result);
+int fc_execute_ctx(femto_container_t *bpf, void *ctx, size_t ctx_size, int64_t *result);
+//int fc_hook_execute(femto_container_hook_trigger_t trigger, void *ctx, size_t ctx_size, int64_t *script_res);
+//int fc_hook_install(femto_container_hook_t *hook, femto_container_hook_trigger_t trigger);
 
-int bpf_install_hook(bpf_t *bpf);
+int fc_install_hook(femto_container_t *bpf);
 
-void bpf_add_region(bpf_t *bpf, bpf_mem_region_t *region,
+void fc_add_region(femto_container_t *bpf, fc_mem_region_t *region,
                     void *start, size_t len, uint8_t flags);
 
-int bpf_store_allowed(const bpf_t *bpf, void *addr, size_t size);
-int bpf_load_allowed(const bpf_t *bpf, void *addr, size_t size);
+int fc_store_allowed(const femto_container_t *bpf, void *addr, size_t size);
+int fc_load_allowed(const femto_container_t *bpf, void *addr, size_t size);
 
-static inline rbpf_header_t *rbpf_header(const bpf_t *bpf)
+static inline femto_container_header_t *femto_container_header(const femto_container_t *bpf)
 {
-    return (rbpf_header_t*)bpf->application;
+    return (femto_container_header_t*)bpf->application;
 }
 
-static inline void *rbpf_rodata(const bpf_t *bpf)
+static inline void *femto_container_rodata(const femto_container_t *bpf)
 {
-    rbpf_header_t *header = rbpf_header(bpf);
-    return (uint8_t*)header + sizeof(rbpf_header_t) + header->data_len;
+    femto_container_header_t *header = femto_container_header(bpf);
+    return (uint8_t*)header + sizeof(femto_container_t) + header->data_len;
 }
 
-static inline void *rbpf_data(const bpf_t *bpf)
+static inline void *femto_container_data(const femto_container_t *bpf)
 {
-    rbpf_header_t *header = rbpf_header(bpf);
-    return (uint8_t*)header + sizeof(rbpf_header_t);
+    femto_container_header_t *header = femto_container_header(bpf);
+    return (uint8_t*)header + sizeof(femto_container_t);
 }
 
-static inline void *rbpf_text(const bpf_t *bpf)
+static inline void *femto_container_text(const femto_container_t *bpf)
 {
-    rbpf_header_t *header = rbpf_header(bpf);
-    return (uint8_t*)header + sizeof(rbpf_header_t) + header->data_len + header->rodata_len;
+    femto_container_header_t *header = femto_container_header(bpf);
+    return (uint8_t*)header + sizeof(femto_container_t) + header->data_len + header->rodata_len;
 }
 
-static inline size_t rbpf_text_len(const bpf_t *bpf)
+static inline size_t femto_container_text_len(const femto_container_t *bpf)
 {
-    rbpf_header_t *header = rbpf_header(bpf);
+    femto_container_header_t *header = femto_container_header(bpf);
     return header->text_len;
 }
 
 /* to be implemented by platform specifc code. */
-void bpf_store_init(void);
+void femto_container_store_init(void);
 
 int bpf_store_update_global(uint32_t key, uint32_t value);
-int bpf_store_update_local(bpf_t *bpf, uint32_t key, uint32_t value);
+int bpf_store_update_local(femto_container_t *bpf, uint32_t key, uint32_t value);
 int bpf_store_fetch_global(uint32_t key, uint32_t *value);
-int bpf_store_fetch_local(bpf_t *bpf, uint32_t key, uint32_t *value);
-void bpf_store_iter_global(btree_cb_t cb, void *ctx);
+int bpf_store_fetch_local(femto_container_t *bpf, uint32_t key, uint32_t *value);
 
-bpf_call_t bpf_get_external_call(uint32_t num);
+fc_call_t fc_get_external_call(uint32_t num);
 #ifdef __cplusplus
 }
 #endif

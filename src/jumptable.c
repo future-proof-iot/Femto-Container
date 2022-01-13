@@ -17,21 +17,13 @@
 #include "femtocontainer/instruction.h"
 #include "femtocontainer/config.h"
 
-#define ENABLE_DEBUG (0)
-#include "debug.h"
-
-#if ENABLE_DEBUG
-#include "xtimer.h"
-#include <stdio.h>
-#endif
-
 typedef int dont_be_pedantic;
-static bpf_call_t _bpf_get_call(uint32_t num);
+static fc_call_t _bpf_get_call(uint32_t num);
 
-static int _check_mem(const bpf_t *bpf, uint8_t size, const intptr_t addr, uint8_t type)
+static int _check_mem(const femto_container_t *bpf, uint8_t size, const intptr_t addr, uint8_t type)
 {
     const intptr_t end = addr + size;
-    for (const bpf_mem_region_t *region = &bpf->stack_region; region; region = region->next) {
+    for (const fc_mem_region_t *region = &bpf->stack_region; region; region = region->next) {
         if ((addr >= (intptr_t)(region->start)) &&
                 (end <= (intptr_t)(region->start + region->len)) &&
                 (region->flag & type)) {
@@ -40,43 +32,34 @@ static int _check_mem(const bpf_t *bpf, uint8_t size, const intptr_t addr, uint8
         }
     }
 
-    DEBUG("Denied access to %p with len %u\n",(void*)addr, end - addr);
     return -1;
 }
 
-static inline int _check_load(const bpf_t *bpf, uint8_t size, const intptr_t addr)
+static inline int _check_load(const femto_container_t *bpf, uint8_t size, const intptr_t addr)
 {
-    return _check_mem(bpf, size, addr, BPF_MEM_REGION_READ);
+    return _check_mem(bpf, size, addr, FC_MEM_REGION_READ);
 }
 
-static inline int _check_store(const bpf_t *bpf, uint8_t size, const intptr_t addr)
+static inline int _check_store(const femto_container_t *bpf, uint8_t size, const intptr_t addr)
 {
-    return _check_mem(bpf, size, addr, BPF_MEM_REGION_WRITE);
+    return _check_mem(bpf, size, addr, FC_MEM_REGION_WRITE);
 }
 
-int bpf_store_allowed(const bpf_t *bpf, void *addr, size_t size)
+int fc_store_allowed(const femto_container_t *bpf, void *addr, size_t size)
 {
     return _check_store(bpf, size, (intptr_t)addr);
 }
 
-int bpf_load_allowed(const bpf_t *bpf, void *addr, size_t size)
+int fc_load_allowed(const femto_container_t *bpf, void *addr, size_t size)
 {
     return _check_load(bpf, size, (intptr_t)addr);
 }
 
-static bpf_call_t _bpf_get_call(uint32_t num)
+static fc_call_t _bpf_get_call(uint32_t num)
 {
     switch(num) {
-        case BPF_FUNC_BPF_STORE_LOCAL:
-            return &bpf_vm_store_local;
-        case BPF_FUNC_BPF_STORE_GLOBAL:
-            return &bpf_vm_store_global;
-        case BPF_FUNC_BPF_FETCH_LOCAL:
-            return &bpf_vm_fetch_local;
-        case BPF_FUNC_BPF_FETCH_GLOBAL:
-            return &bpf_vm_fetch_global;
         default:
-            return bpf_get_external_call(num);
+            return fc_get_external_call(num);
     }
 }
 
@@ -94,7 +77,7 @@ static bpf_call_t _bpf_get_call(uint32_t num)
 #define CONT_JUMP  { goto jump_instr; } /* Execute the jump and continue */
 
 /* Check if we implement 32 bit instructions */
-#if (CONFIG_BPF_ENABLE_ALU32)
+#if (FEMTO_CONTAINER_ENABLE_ALU32)
 
 /* Generate the ALU instruction, based on the opcode name and the operation
  * itself. ALU(ADD, +) generates the 2 or 4 instructions implementing the add
@@ -134,7 +117,7 @@ static bpf_call_t _bpf_get_call(uint32_t num)
 /* This generates values for the jumptable array. It combines the same opcode
  * name as used in the code generation macros and the numeric opcode value to
  * create a jumptable entry. Entries are generated for 64 and 32 bit types */
-#if CONFIG_BPF_ENABLE_ALU32
+#if FEMTO_CONTAINER_ENABLE_ALU32
 #define ALU_OPCODE_REG(OPCODE, VALUE) \
     [VALUE | 0x0C ] = &&ALU32_##OPCODE##_REG, \
     [VALUE | 0x0F ] = &&ALU64_##OPCODE##_REG
@@ -170,30 +153,22 @@ static bpf_call_t _bpf_get_call(uint32_t num)
     [VALUE | 0x00] = &&MEM_##OPCODE##_WORD, \
     [VALUE | 0x18] = &&MEM_##OPCODE##_LONG \
 
-int bpf_run(bpf_t *bpf, const void *ctx, int64_t *result)
+int femto_container_run(femto_container_t *bpf, const void *ctx, int64_t *result)
 {
-    int res = BPF_OK;
-    bpf->branches_remaining = CONFIG_BPF_BRANCHES_ALLOWED;
+    int res = FC_OK;
+    bpf->branches_remaining = FEMTO_CONTAINER_BRANCHES_ALLOWED;
     uint64_t regmap[11] = { 0 };
     regmap[1] = (uint64_t)(uintptr_t)ctx;
     regmap[10] = (uint64_t)(uintptr_t)(bpf->stack + bpf->stack_size);
 
 
-    const bpf_instruction_t *instr = (const bpf_instruction_t*)rbpf_text(bpf);
+    const bpf_instruction_t *instr = (const bpf_instruction_t*)femto_container_text(bpf);
     bool jump_cond = false;
 
-#if ENABLE_DEBUG
-    uint32_t start = xtimer_now_usec();
-#endif
-
-    res = bpf_verify_preflight(bpf);
+    res = femto_container_verify_preflight(bpf);
     if (res < 0) {
         return res;
     }
-
-#if ENABLE_DEBUG
-    uint32_t mid = xtimer_now_usec();
-#endif
 
     /* Create an instruction jumptable with calculated addresses for the goto */
     static const void * const _jumptable[256] = {
@@ -243,9 +218,9 @@ int bpf_run(bpf_t *bpf, const void *ctx, int64_t *result)
 jump_instr:
     if (jump_cond) {
         instr += instr->offset;
-        if ((!(bpf->flags & BPF_CONFIG_NO_RETURN)) &&
+        if ((!(bpf->flags & FC_CONFIG_NO_RETURN)) &&
                 bpf->branches_remaining-- == 0) {
-            res = BPF_OUT_OF_BRANCHES;
+            res = FC_OUT_OF_BRANCHES;
             goto exit;
         }
     }
@@ -269,29 +244,29 @@ bpf_start:
 
 ALU64_MOD_REG:
     if (SRC == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = DST % SRC;
     CONT;
 ALU64_MOD_IMM:
     if (IMM == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = DST % IMM;
     CONT;
-#if (CONFIG_BPF_ENABLE_ALU32)
+#if (FEMTO_CONTAINER_ENABLE_ALU32)
 ALU32_MOD_REG:
     if (SRC == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = (uint32_t)DST % (uint32_t)SRC;
     CONT;
 ALU32_MOD_IMM:
     if (IMM == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = (uint32_t)DST % (uint32_t)IMM;
@@ -300,29 +275,29 @@ ALU32_MOD_IMM:
 
 ALU64_DIV_REG:
     if (SRC == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = DST / SRC;
     CONT;
 ALU64_DIV_IMM:
     if (IMM == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = DST / IMM;
     CONT;
-#if (CONFIG_BPF_ENABLE_ALU32)
+#if (FEMTO_CONTAINER_ENABLE_ALU32)
 ALU32_DIV_REG:
     if (SRC == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = (uint32_t)DST / (uint32_t)SRC;
     CONT;
 ALU32_DIV_IMM:
     if (IMM == 0) {
-        res = BPF_ILLEGAL_DIV;
+        res = FC_ILLEGAL_DIV;
         goto exit;
     }
     DST = (uint32_t)DST / (uint32_t)IMM;
@@ -333,7 +308,7 @@ ALU64_NEG_REG:
     DST = -(int64_t)DST;
     CONT;
 
-#if (CONFIG_BPF_ENABLE_ALU32)
+#if (FEMTO_CONTAINER_ENABLE_ALU32)
 ALU32_NEG_REG:
     DST = -(int32_t)DST;
     CONT;
@@ -360,7 +335,7 @@ ALU64_ARSH_REG:
 ALU64_ARSH_IMM:
     (*(int64_t*) &DST) >>= IMM;
     CONT;
-#if (CONFIG_BPF_ENABLE_ALU32)
+#if (FEMTO_CONTAINER_ENABLE_ALU32)
 ALU32_ARSH_REG:
     DST = (int32_t)DST >> SRC;
     CONT;
@@ -376,14 +351,14 @@ MEM_LDDW_IMM:
     CONT;
 
 MEM_LDDWD_IMM:
-    DST = (intptr_t)rbpf_data(bpf);
+    DST = (intptr_t)femto_container_data(bpf);
     DST += (uint64_t)instr->immediate;
     DST += ((uint64_t)((instr+1)->immediate)) << 32;
     instr++;
     CONT;
 
 MEM_LDDWR_IMM:
-    DST = (intptr_t)rbpf_rodata(bpf);
+    DST = (intptr_t)femto_container_rodata(bpf);
     DST += (uint64_t)instr->immediate;
     DST += ((uint64_t)((instr+1)->immediate)) << 32;
     instr++;
@@ -432,18 +407,14 @@ JUMP_ALWAYS:
     COND_JMP(i, SLE, <=)
 OPCODE_CALL:
     {
-        bpf_call_t call = _bpf_get_call(instr->immediate);
+        fc_call_t call = _bpf_get_call(instr->immediate);
         if (call) {
             regmap[0] = (*(call))(bpf,
-                                  regmap[1],
-                                  regmap[2],
-                                  regmap[3],
-                                  regmap[4],
-                                  regmap[5]);
+                                  regmap);
             CONT;
         }
         else {
-            res = BPF_ILLEGAL_CALL;
+            res = FC_ILLEGAL_CALL;
             goto exit;
         }
     }
@@ -451,21 +422,15 @@ OPCODE_RETURN:
     goto exit;
 
 invalid_instruction:
-    res = BPF_ILLEGAL_INSTRUCTION;
+    res = FC_ILLEGAL_INSTRUCTION;
     goto exit;
 
 mem_error:
-    res = BPF_ILLEGAL_MEM;
+    res = FC_ILLEGAL_MEM;
 
 exit:
 
     *result = regmap[0];
-#if ENABLE_DEBUG
-    uint32_t end = xtimer_now_usec();
-
-    printf("startup = %"PRIu32" us\n", mid - start);
-    printf("timing = %"PRIu32" us\n", end - mid);
-#endif
     return res;
 }
 

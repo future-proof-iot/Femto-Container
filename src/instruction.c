@@ -58,21 +58,19 @@ static inline int _check_store(const bpf_t *bpf, uint8_t size, const intptr_t ad
     return _check_mem(bpf, size, addr, BPF_MEM_REGION_WRITE);
 }
 
-int bpf_store_allowed(const bpf_t *bpf, void *addr, size_t size)
+int fc_store_allowed(const bpf_t *bpf, void *addr, size_t size)
 {
     return _check_store(bpf, size, (intptr_t)addr);
 }
 
-int bpf_load_allowed(const bpf_t *bpf, void *addr, size_t size)
+int fc_load_allowed(const bpf_t *bpf, void *addr, size_t size)
 {
     return _check_load(bpf, size, (intptr_t)addr);
 }
 
-static bpf_call_t _bpf_get_call(uint32_t num)
+static femto_container_call_t _fc_get_call(uint32_t num)
 {
     switch(num) {
-        case BPF_FUNC_BPF_PRINTF:
-            return &bpf_vm_printf;
         case BPF_FUNC_BPF_STORE_LOCAL:
             return &bpf_vm_store_local;
         case BPF_FUNC_BPF_STORE_GLOBAL:
@@ -81,20 +79,6 @@ static bpf_call_t _bpf_get_call(uint32_t num)
             return &bpf_vm_fetch_local;
         case BPF_FUNC_BPF_FETCH_GLOBAL:
             return &bpf_vm_fetch_global;
-        case BPF_FUNC_BPF_NOW_MS:
-            return &bpf_vm_now_ms;
-        case BPF_FUNC_BPF_SAUL_REG_FIND_NTH:
-            return &bpf_vm_saul_reg_find_nth;
-        case BPF_FUNC_BPF_SAUL_REG_FIND_TYPE:
-            return &bpf_vm_saul_reg_find_type;
-        case BPF_FUNC_BPF_SAUL_REG_READ:
-            return &bpf_vm_saul_reg_read;
-#ifdef MODULE_GCOAP
-        case BPF_FUNC_BPF_GCOAP_RESP_INIT:
-            return &bpf_vm_gcoap_resp_init;
-        case BPF_FUNC_BPF_COAP_OPT_FINISH:
-            return &bpf_vm_coap_opt_finish;
-#endif
         default:
             return NULL;
     }

@@ -16,34 +16,25 @@
 #include "femtocontainer/instruction.h"
 #include "femtocontainer/config.h"
 
-#define ENABLE_DEBUG (0)
-#include "debug.h"
-
-static bool _bpf_check_call(uint32_t num)
+static bool _fc_check_call(uint32_t num)
 {
     switch(num) {
-        /* These calls are expected to be supported */
-        case BPF_FUNC_BPF_STORE_LOCAL:
-        case BPF_FUNC_BPF_STORE_GLOBAL:
-        case BPF_FUNC_BPF_FETCH_LOCAL:
-        case BPF_FUNC_BPF_FETCH_GLOBAL:
-            return true;
         default:
-            return bpf_get_external_call(num) ? true : false;
+            return fc_get_external_call(num) ? true : false;
     }
 }
 
 
-int bpf_verify_preflight(bpf_t *bpf)
+int femto_container_verify_preflight(femto_container_t *bpf)
 {
-    const bpf_instruction_t *application = rbpf_text(bpf);
-    size_t length = rbpf_text_len(bpf);
-    if (bpf->flags & BPF_FLAG_PREFLIGHT_DONE) {
-        return BPF_OK;
+    const bpf_instruction_t *application = femto_container_text(bpf);
+    size_t length = femto_container_text_len(bpf);
+    if (bpf->flags & FC_FLAG_PREFLIGHT_DONE) {
+        return FC_OK;
     }
 
     if (length & 0x7) {
-        return BPF_ILLEGAL_LEN;
+        return FC_ILLEGAL_LEN;
     }
 
 
@@ -51,7 +42,7 @@ int bpf_verify_preflight(bpf_t *bpf)
             i < (bpf_instruction_t*)((uint8_t*)application + length); i++) {
         /* Check if register values are valid */
         if (i->dst >= 11 || i->src >= 11) {
-            return BPF_ILLEGAL_REGISTER;
+            return FC_ILLEGAL_REGISTER;
         }
 
         /* Double length instruction */
@@ -67,13 +58,13 @@ int bpf_verify_preflight(bpf_t *bpf)
              * incremented after the jump by the regular PC increase */
             if ((target >= (intptr_t)((uint8_t*)application + length))
                 || (target < (intptr_t)application)) {
-                return BPF_ILLEGAL_JUMP;
+                return FC_ILLEGAL_JUMP;
             }
         }
 
         if (i->opcode == (BPF_INSTRUCTION_BRANCH_CALL | BPF_INSTRUCTION_CLS_BRANCH)) {
-            if (!_bpf_check_call(i->immediate)) {
-                return BPF_ILLEGAL_CALL;
+            if (!_fc_check_call(i->immediate)) {
+                return FC_ILLEGAL_CALL;
             }
         }
     }
@@ -81,9 +72,9 @@ int bpf_verify_preflight(bpf_t *bpf)
     size_t num_instructions = length/sizeof(bpf_instruction_t);
 
     /* Check if the last instruction is a return instruction */
-    if (application[num_instructions - 1].opcode != 0x95 && !(bpf->flags & BPF_CONFIG_NO_RETURN)) {
-        return BPF_NO_RETURN;
+    if (application[num_instructions - 1].opcode != 0x95 && !(bpf->flags & FC_CONFIG_NO_RETURN)) {
+        return FC_NO_RETURN;
     }
-    bpf->flags |= BPF_FLAG_PREFLIGHT_DONE;
-    return BPF_OK;
+    bpf->flags |= FC_FLAG_PREFLIGHT_DONE;
+    return FC_OK;
 }
