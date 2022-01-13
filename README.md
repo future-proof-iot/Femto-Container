@@ -9,6 +9,7 @@ applications into efficient representations.
 - [Installation](#installation)
 - [Usage](#usage)
 - [Development](#development)
+- [Further Reading and References](#further-reading--references)
 
 # Installation
 
@@ -26,4 +27,10 @@ Development of Femto-Containers is still in early stage. Documentation might be
 lacking and the API is not yet stabilized. This will get better in the near
 future.
 
+# Further Reading & References
+
+This [preprint](https://arxiv.org/pdf/2106.12553.pdf) describes Femto-Containers in details.
+This [paper](https://arxiv.org/pdf/2011.12047.pdf) describes the rBPF interpreter and the porting of the eBPF instruction set to various microcontrollers.
+
 [eBPF]: https://ebpf.io/
+
