@@ -68,7 +68,7 @@ int fc_load_allowed(const bpf_t *bpf, void *addr, size_t size)
     return _check_load(bpf, size, (intptr_t)addr);
 }
 
-static femto_container_call_t _fc_get_call(uint32_t num)
+static f12r_call_t _fc_get_call(uint32_t num)
 {
     switch(num) {
         case BPF_FUNC_BPF_STORE_LOCAL:

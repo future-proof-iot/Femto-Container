@@ -18,12 +18,11 @@
 #include "femtocontainer/config.h"
 
 typedef int dont_be_pedantic;
-static fc_call_t _bpf_get_call(uint32_t num);
 
-static int _check_mem(const femto_container_t *bpf, uint8_t size, const intptr_t addr, uint8_t type)
+static int _check_mem(const f12r_t *femtoc, uint8_t size, const intptr_t addr, uint8_t type)
 {
     const intptr_t end = addr + size;
-    for (const fc_mem_region_t *region = &bpf->stack_region; region; region = region->next) {
+    for (const f12r_mem_region_t *region = &femtoc->stack_region; region; region = region->next) {
         if ((addr >= (intptr_t)(region->start)) &&
                 (end <= (intptr_t)(region->start + region->len)) &&
                 (region->flag & type)) {
@@ -35,31 +34,31 @@ static int _check_mem(const femto_container_t *bpf, uint8_t size, const intptr_t
     return -1;
 }
 
-static inline int _check_load(const femto_container_t *bpf, uint8_t size, const intptr_t addr)
+static inline int _check_load(const f12r_t *femtoc, uint8_t size, const intptr_t addr)
 {
-    return _check_mem(bpf, size, addr, FC_MEM_REGION_READ);
+    return _check_mem(femtoc, size, addr, FC_MEM_REGION_READ);
 }
 
-static inline int _check_store(const femto_container_t *bpf, uint8_t size, const intptr_t addr)
+static inline int _check_store(const f12r_t *femtoc, uint8_t size, const intptr_t addr)
 {
-    return _check_mem(bpf, size, addr, FC_MEM_REGION_WRITE);
+    return _check_mem(femtoc, size, addr, FC_MEM_REGION_WRITE);
 }
 
-int fc_store_allowed(const femto_container_t *bpf, void *addr, size_t size)
+int f12r_store_allowed(const f12r_t *femtoc, void *addr, size_t size)
 {
-    return _check_store(bpf, size, (intptr_t)addr);
+    return _check_store(femtoc, size, (intptr_t)addr);
 }
 
-int fc_load_allowed(const femto_container_t *bpf, void *addr, size_t size)
+int f12r_load_allowed(const f12r_t *femtoc, void *addr, size_t size)
 {
-    return _check_load(bpf, size, (intptr_t)addr);
+    return _check_load(femtoc, size, (intptr_t)addr);
 }
 
-static fc_call_t _bpf_get_call(uint32_t num)
+static f12r_call_t _femtoc_get_call(uint32_t num)
 {
     switch(num) {
         default:
-            return fc_get_external_call(num);
+            return f12r_get_external_call(num);
     }
 }
 
@@ -153,19 +152,19 @@ static fc_call_t _bpf_get_call(uint32_t num)
     [VALUE | 0x00] = &&MEM_##OPCODE##_WORD, \
     [VALUE | 0x18] = &&MEM_##OPCODE##_LONG \
 
-int femto_container_run(femto_container_t *bpf, const void *ctx, int64_t *result)
+int f12r_run(f12r_t *femtoc, const void *ctx, int64_t *result)
 {
     int res = FC_OK;
-    bpf->branches_remaining = FEMTO_CONTAINER_BRANCHES_ALLOWED;
+    femtoc->branches_remaining = FEMTO_CONTAINER_BRANCHES_ALLOWED;
     uint64_t regmap[11] = { 0 };
     regmap[1] = (uint64_t)(uintptr_t)ctx;
-    regmap[10] = (uint64_t)(uintptr_t)(bpf->stack + bpf->stack_size);
+    regmap[10] = (uint64_t)(uintptr_t)(femtoc->stack + femtoc->stack_size);
 
 
-    const bpf_instruction_t *instr = (const bpf_instruction_t*)femto_container_text(bpf);
+    const bpf_instruction_t *instr = (const bpf_instruction_t*)f12r_text(femtoc);
     bool jump_cond = false;
 
-    res = femto_container_verify_preflight(bpf);
+    res = f12r_verify_preflight(femtoc);
     if (res < 0) {
         return res;
     }
@@ -213,13 +212,13 @@ int femto_container_run(femto_container_t *bpf, const void *ctx, int64_t *result
         [0x95] = &&OPCODE_RETURN,
     };
 
-    goto bpf_start;
+    goto femtoc_start;
 
 jump_instr:
     if (jump_cond) {
         instr += instr->offset;
-        if ((!(bpf->flags & FC_CONFIG_NO_RETURN)) &&
-                bpf->branches_remaining-- == 0) {
+        if ((!(femtoc->flags & FC_CONFIG_NO_RETURN)) &&
+                femtoc->branches_remaining-- == 0) {
             res = FC_OUT_OF_BRANCHES;
             goto exit;
         }
@@ -228,8 +227,8 @@ jump_instr:
     /* Intentionally falls through to select_instr */
 select_instr:
     instr++;
-bpf_start:
-    //bpf->instruction_count++;
+femtoc_start:
+    //femtoc->instruction_count++;
     goto *_jumptable[instr->opcode];
 
 /* Macros implementing the instruction code for the simple ALU based operations */
@@ -351,14 +350,14 @@ MEM_LDDW_IMM:
     CONT;
 
 MEM_LDDWD_IMM:
-    DST = (intptr_t)femto_container_data(bpf);
+    DST = (intptr_t)f12r_data(femtoc);
     DST += (uint64_t)instr->immediate;
     DST += ((uint64_t)((instr+1)->immediate)) << 32;
     instr++;
     CONT;
 
 MEM_LDDWR_IMM:
-    DST = (intptr_t)femto_container_rodata(bpf);
+    DST = (intptr_t)f12r_rodata(femtoc);
     DST += (uint64_t)instr->immediate;
     DST += ((uint64_t)((instr+1)->immediate)) << 32;
     instr++;
@@ -366,19 +365,19 @@ MEM_LDDWR_IMM:
 
 #define MEM(SIZEOP, SIZE)                     \
       MEM_STX_##SIZEOP:                       \
-          if (_check_store(bpf, sizeof(SIZE), DST + instr->offset) < 0) { \
+          if (_check_store(femtoc, sizeof(SIZE), DST + instr->offset) < 0) { \
               goto mem_error; \
           } \
           *(SIZE *)(uintptr_t)(DST + instr->offset) = SRC;   \
           CONT;                               \
       MEM_ST_##SIZEOP:                        \
-          if (_check_store(bpf, sizeof(SIZE), DST + instr->offset) < 0) { \
+          if (_check_store(femtoc, sizeof(SIZE), DST + instr->offset) < 0) { \
               goto mem_error; \
           } \
           *(SIZE *)(uintptr_t)(DST + instr->offset) = IMM;   \
           CONT;                               \
       MEM_LDX_##SIZEOP:                       \
-          if (_check_load(bpf, sizeof(SIZE), SRC + instr->offset) < 0) { \
+          if (_check_load(femtoc, sizeof(SIZE), SRC + instr->offset) < 0) { \
               goto mem_error; \
           } \
           DST = *(const SIZE *)(uintptr_t)(SRC + instr->offset);   \
@@ -407,9 +406,9 @@ JUMP_ALWAYS:
     COND_JMP(i, SLE, <=)
 OPCODE_CALL:
     {
-        fc_call_t call = _bpf_get_call(instr->immediate);
+        f12r_call_t call = _femtoc_get_call(instr->immediate);
         if (call) {
-            regmap[0] = (*(call))(bpf,
+            regmap[0] = (*(call))(femtoc,
                                   regmap);
             CONT;
         }

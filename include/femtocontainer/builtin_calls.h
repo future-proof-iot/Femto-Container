@@ -14,10 +14,10 @@
 extern "C" {
 #endif
 
-uint32_t bpf_vm_store_local(femto_container_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
-uint32_t bpf_vm_store_global(femto_container_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
-uint32_t bpf_vm_fetch_local(femto_container_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
-uint32_t bpf_vm_fetch_global(femto_container_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
+uint32_t bpf_vm_store_local(f12r_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
+uint32_t bpf_vm_store_global(f12r_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
+uint32_t bpf_vm_fetch_local(f12r_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
+uint32_t bpf_vm_fetch_global(f12r_t *bpf, uint32_t key, uint32_t value, uint32_t a3, uint32_t a4, uint32_t a5);
 
 #ifdef __cplusplus
 }

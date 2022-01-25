@@ -16,20 +16,20 @@
 #include "femtocontainer/instruction.h"
 #include "femtocontainer/config.h"
 
-static bool _fc_check_call(uint32_t num)
+static bool _f12r_check_call(uint32_t num)
 {
     switch(num) {
         default:
-            return fc_get_external_call(num) ? true : false;
+            return f12r_get_external_call(num) ? true : false;
     }
 }
 
 
-int femto_container_verify_preflight(femto_container_t *bpf)
+int f12r_verify_preflight(f12r_t *femtoc)
 {
-    const bpf_instruction_t *application = femto_container_text(bpf);
-    size_t length = femto_container_text_len(bpf);
-    if (bpf->flags & FC_FLAG_PREFLIGHT_DONE) {
+    const bpf_instruction_t *application = f12r_text(femtoc);
+    size_t length = f12r_text_len(femtoc);
+    if (femtoc->flags & FC_FLAG_PREFLIGHT_DONE) {
         return FC_OK;
     }
 
@@ -63,7 +63,7 @@ int femto_container_verify_preflight(femto_container_t *bpf)
         }
 
         if (i->opcode == (BPF_INSTRUCTION_BRANCH_CALL | BPF_INSTRUCTION_CLS_BRANCH)) {
-            if (!_fc_check_call(i->immediate)) {
+            if (!_f12r_check_call(i->immediate)) {
                 return FC_ILLEGAL_CALL;
             }
         }
@@ -72,9 +72,9 @@ int femto_container_verify_preflight(femto_container_t *bpf)
     size_t num_instructions = length/sizeof(bpf_instruction_t);
 
     /* Check if the last instruction is a return instruction */
-    if (application[num_instructions - 1].opcode != 0x95 && !(bpf->flags & FC_CONFIG_NO_RETURN)) {
+    if (application[num_instructions - 1].opcode != 0x95 && !(femtoc->flags & FC_CONFIG_NO_RETURN)) {
         return FC_NO_RETURN;
     }
-    bpf->flags |= FC_FLAG_PREFLIGHT_DONE;
+    femtoc->flags |= FC_FLAG_PREFLIGHT_DONE;
     return FC_OK;
 }
