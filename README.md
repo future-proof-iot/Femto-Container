@@ -1,3 +1,5 @@
+[![Compile and test](https://github.com/future-proof-iot/Femto-Container/actions/workflows/tests.yml/badge.svg)](https://github.com/future-proof-iot/Femto-Container/actions/workflows/tests.yml)
+
 # Femto-Containers
 
 Femto-Containers is a minimal lightweight virtual machine environment for
