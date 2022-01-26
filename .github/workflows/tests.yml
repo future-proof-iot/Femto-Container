@@ -1,0 +1,16 @@
+name: Compile and test
+on: [push]
+jobs:
+  compile-and-test:
+    runs-on: ubuntu-latest
+    container: gcc:11
+    steps:
+      - uses: actions/checkout@v2
+      - run: apt update && apt install -y meson ninja-build
+        name: Install prerequisites
+      - run: meson build
+        name: Configure build
+      - run: ninja -C build
+        name: Compile
+      - run: meson test -C build
+        name: Run tests
