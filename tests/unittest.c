@@ -2,9 +2,16 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <inttypes.h>
+#include <sys/random.h>
+#include <time.h>
 
 #include "femtocontainer/femtocontainer.h"
 #include "femtocontainer/instruction.h"
+
+#ifndef NUM_RAND_TESTS
+#define NUM_RAND_TESTS  50000
+#endif
 
 static uint8_t _f12r_stack[512];
 
@@ -39,9 +46,88 @@ typedef struct {
 
 typedef struct {
     bpf_instruction_t instruction;
-    char *name;
     test_context_t context;
+    int64_t (*verify_func)(int64_t arg1, int64_t arg2);
+    void (*prep_args)(int64_t *arg1, int64_t *arg2);
 } test_content_t;
+
+static int64_t _sum(int64_t arg1, int64_t arg2)
+{
+    return arg1 + arg2;
+}
+
+static int64_t _sub(int64_t arg1, int64_t arg2)
+{
+    return arg1 - arg2;
+}
+
+static int64_t _mul(int64_t arg1, int64_t arg2)
+{
+    return arg1 * arg2;
+}
+
+static int64_t _div(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 / (uint64_t)arg2;
+}
+
+static void _div_prep(int64_t *arg1, int64_t *arg2)
+{
+    if (*arg2 == 0) {
+        *arg2 = 1;
+    }
+}
+
+static int64_t _lsh(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 << (uint64_t)arg2;
+}
+
+static int64_t _rsh(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 >> (uint64_t)arg2;
+}
+
+static int64_t _arsh(int64_t arg1, int64_t arg2)
+{
+    return arg1 >> (uint64_t)arg2;
+}
+
+static void _shift_prep(int64_t *arg1, int64_t *arg2)
+{
+    *arg2 &= 0x1f;
+}
+
+static int64_t _or(int64_t arg1, int64_t arg2)
+{
+    return arg1 | arg2;
+}
+
+static int64_t _and(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 & (uint64_t)arg2;
+}
+
+static int64_t _neg(int64_t arg1, int64_t arg2)
+{
+    (void)arg2;
+    return -arg1;
+}
+
+static int64_t _mod(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 % (uint64_t)arg2;
+}
+
+static int64_t _xor(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg1 ^ (uint64_t)arg2;
+}
+
+static int64_t _mov(int64_t arg1, int64_t arg2)
+{
+    return (uint64_t)arg2;
+}
 
 static const test_content_t tests[] = {
     {
@@ -49,14 +135,97 @@ static const test_content_t tests[] = {
             .opcode = 0x0f,
             .src = 2,
         },
-        .name = "ALU Add",
-        .context = {
-            1,
-            2,
-            3,
+        .verify_func = _sum,
+    },
+    {
+        .instruction = {
+            .opcode = 0x1f,
+            .src = 2,
         },
+        .verify_func = _sub,
+    },
+    {
+        .instruction = {
+            .opcode = 0x2f,
+            .src = 2,
+        },
+        .verify_func = _mul,
+    },
+    {
+        .instruction = {
+            .opcode = 0x3f,
+            .src = 2,
+        },
+        .verify_func = _div,
+        .prep_args = _div_prep,
+    },
+    {
+        .instruction = {
+            .opcode = 0x4f,
+            .src = 2,
+        },
+        .verify_func = _or,
+    },
+    {
+        .instruction = {
+            .opcode = 0x5f,
+            .src = 2,
+        },
+        .verify_func = _and,
+    },
+    {
+        .instruction = {
+            .opcode = 0x6f,
+            .src = 2,
+        },
+        .verify_func = _lsh,
+        .prep_args = _shift_prep,
+    },
+    {
+        .instruction = {
+            .opcode = 0x7f,
+            .src = 2,
+        },
+        .verify_func = _rsh,
+        .prep_args = _shift_prep,
+    },
+    {
+        .instruction = {
+            .opcode = 0x8f,
+        },
+        .verify_func = _neg,
+    },
+    {
+        .instruction = {
+            .opcode = 0x9f,
+            .src = 2,
+        },
+        .verify_func = _mod,
+    },
+    {
+        .instruction = {
+            .opcode = 0xaf,
+            .src = 2,
+        },
+        .verify_func = _xor,
+    },
+    {
+        .instruction = {
+            .opcode = 0xbf,
+            .src = 2,
+        },
+        .verify_func = _mov,
+    },
+    {
+        .instruction = {
+            .opcode = 0xcf,
+            .src = 2,
+        },
+        .verify_func = _arsh,
+        .prep_args = _shift_prep,
     },
 };
+
 
 #define NUM_TESTS   (sizeof(tests)/sizeof(test_content_t))
 
@@ -78,23 +247,48 @@ static void add_instruction(const bpf_instruction_t *instr, test_application_t *
 
 int main()
 {
+    time_t curtime = time(0);
+    printf("Rand seed: %lu\n", curtime);
+    srand(curtime);
     for (size_t idx = 0; idx < NUM_TESTS; idx++) {
-        add_instruction(&tests[idx].instruction, &test_app);
+        const test_content_t *test = &tests[idx];
+        add_instruction(&test->instruction, &test_app);
 
-        f12r_t femtoc = {
-            .application = (uint8_t*)&test_app,
-            .application_len = sizeof(test_app),
-            .stack = _f12r_stack,
-            .stack_size = sizeof(_f12r_stack),
-        };
+        for (size_t i = 0; i < NUM_RAND_TESTS; i++) {
+            test_context_t ctx;
+            getrandom(&ctx.arg1, sizeof(ctx.arg1), 0);
+            getrandom(&ctx.arg2, sizeof(ctx.arg1), 0);
 
-        f12r_setup(&femtoc);
-        int64_t res = 0;
-        int result = f12r_execute_ctx(&femtoc,
-                                      (void*)&tests[idx].context,
-                                      sizeof(test_context_t), &res);
-        assert(result == FC_OK);
-        assert(res == tests[idx].context.result);
+            if (test->prep_args) {
+                test->prep_args(&ctx.arg1, &ctx.arg2);
+            }
+
+            f12r_t femtoc = {
+                .application = (uint8_t*)&test_app,
+                .application_len = sizeof(test_app),
+                .stack = _f12r_stack,
+                .stack_size = sizeof(_f12r_stack),
+            };
+
+            f12r_setup(&femtoc);
+            int64_t res = 0;
+            int result = f12r_execute_ctx(&femtoc,
+                                          (void*)&ctx,
+                                          sizeof(test_context_t), &res);
+            int64_t expected = test->verify_func(ctx.arg1, ctx.arg2);
+            if (result != FC_OK || res != expected) {
+                printf("idx: %lu, Opcode: 0x%x, %"PRIi64", %"PRIi64" = %"PRIi64", got: %"PRIi64"\n",
+                        idx,
+                        test->instruction.opcode,
+                        ctx.arg1,
+                        ctx.arg2,
+                        res,
+                        expected);
+            }
+
+            assert(result == FC_OK);
+            assert(res == expected);
+        }
     }
 
     return 0;
