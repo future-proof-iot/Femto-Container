@@ -321,10 +321,10 @@ ALU32_MOV_REG:
     CONT;
 #endif
 ALU64_MOV_IMM:
-    DST = (uint32_t)IMM;
+    DST = IMM;
     CONT;
 ALU64_MOV_REG:
-    DST = (uint32_t)SRC;
+    DST = SRC;
     CONT;
 
     /* Arithmetic shift */
