@@ -22,6 +22,7 @@
 #ifndef FEMTO_CONTAINER_EXTERNAL_CALLS
 static inline f12r_call_t f12r_get_external_call(uint32_t num)
 {
+    (void)num;
     return NULL;
 }
 #endif
